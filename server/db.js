@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const bcrypt = require('bcryptjs');
 
-const DB_FILE = path.join(__dirname, 'allsence.db');
+const DB_FILE = process.env.DB_PATH || path.join(__dirname, 'allsence.db');
 
 // ── Wrapper around sql.js that mimics better-sqlite3 prepare/run/get/all ───────
 

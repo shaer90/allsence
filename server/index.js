@@ -1,10 +1,12 @@
 const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');
+const path = require('path');
 const { initDB } = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const isProd = process.env.NODE_ENV === 'production';
 
 app.use(cors({ origin: true, credentials: true }));
 app.use(cookieParser());
@@ -20,9 +22,16 @@ app.use('/api/verifications', require('./routes/verifications'));
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
+// Serve React frontend in production (must come after API routes)
+if (isProd) {
+  const distPath = path.join(__dirname, '..', 'dist');
+  app.use(express.static(distPath));
+  app.get('*', (_req, res) => res.sendFile(path.join(distPath, 'index.html')));
+}
+
 initDB().then(() => {
   app.listen(PORT, () => {
-    console.log(`Allsence server running on http://localhost:${PORT}`);
+    console.log(`Allsence server running on port ${PORT}`);
   });
 }).catch((err) => {
   console.error('DB init failed:', err);
