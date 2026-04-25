@@ -9,3 +9,4 @@ dist/
 Thumbs.db
 *.tmp
 *.log
+tsconfig.tsbuildinfo
