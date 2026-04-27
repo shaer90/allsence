@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
-import { networkAPI, ordersAPI, authAPI, Commission, Payment } from '../services/api';
+import { networkAPI, ordersAPI, authAPI, paymentRequestAPI, Commission, Payment } from '../services/api';
 import {
   FiCopy, FiCheck, FiUsers, FiDollarSign, FiShoppingBag,
   FiShare2, FiLink, FiTrendingUp, FiShield, FiSettings,
@@ -62,9 +62,9 @@ export default function MemberDashboard() {
   const [pwLoading, setPwLoading] = useState(false);
   const [pwMsg, setPwMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Withdrawal request state
-  const [withdrawing, setWithdrawing] = useState(false);
-  const [withdrawAmount, setWithdrawAmount] = useState('');
+  // Payment request state
+  const [payReqLoading, setPayReqLoading] = useState(false);
+  const [payReqMsg, setPayReqMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Toast
   const [toast, setToast] = useState('');
@@ -134,16 +134,23 @@ export default function MemberDashboard() {
     setTimeout(() => setCopiedLink(false), 2000);
   };
 
-  const handleWithdraw = () => {
-    const amount = parseFloat(withdrawAmount);
-    if (!amount || amount <= 0) return;
-    if (amount > (earnings?.available || 0)) {
-      showToast('المبلغ أكبر من الرصيد المتاح');
-      return;
+  const isActive = (orders as { createdAt?: string }[]).some(
+    (o) => o.createdAt && new Date(o.createdAt) > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+  );
+
+  const handlePaymentRequest = async () => {
+    setPayReqLoading(true);
+    setPayReqMsg(null);
+    try {
+      await paymentRequestAPI.create();
+      showToast('تم إرسال طلب الدفع للإدارة بنجاح');
+      setPayReqMsg({ type: 'success', text: 'تم إرسال طلب الدفع للإدارة بنجاح' });
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message;
+      setPayReqMsg({ type: 'error', text: msg || 'حدث خطأ، حاول مجدداً' });
+    } finally {
+      setPayReqLoading(false);
     }
-    showToast(`تم إرسال طلب سحب ₪${amount.toFixed(2)} بنجاح`);
-    setWithdrawing(false);
-    setWithdrawAmount('');
   };
 
   const handleChangePassword = async () => {
@@ -351,6 +358,54 @@ export default function MemberDashboard() {
                   <div className={`text-2xl font-black ${b.color} mb-3`}>₪{b.value.toFixed(2)}</div>
                 </div>
               ))}
+            </div>
+
+            {/* Payment request */}
+            <div className="glass-card rounded-2xl p-5 border border-pink-500/20">
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <div>
+                  <div className="text-sm font-bold text-white mb-0.5">طلب دفع الأرباح</div>
+                  <div className="text-xs text-gray-400">
+                    {isActive
+                      ? 'أنت عضوة نشطة — يمكنك طلب الدفع من الإدارة'
+                      : 'يجب تقديم طلب شراء خلال آخر 30 يوماً لتصبحي نشطة'}
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className={`text-xs px-2.5 py-1 rounded-full font-semibold ${
+                    isActive ? 'bg-green-400/10 text-green-400 border border-green-400/20' : 'bg-gray-500/10 text-gray-400 border border-gray-500/20'
+                  }`}>
+                    {isActive ? '● نشطة' : '○ غير نشطة'}
+                  </span>
+                  <button
+                    onClick={handlePaymentRequest}
+                    disabled={payReqLoading || !isActive}
+                    className="btn-primary px-5 py-2.5 text-sm flex items-center gap-2 disabled:opacity-50"
+                  >
+                    {payReqLoading
+                      ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      : <FiDollarSign size={14} />}
+                    طلب دفع
+                  </button>
+                </div>
+              </div>
+              <AnimatePresence>
+                {payReqMsg && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    className={`mt-3 text-sm px-4 py-2.5 rounded-xl flex items-center gap-2 ${
+                      payReqMsg.type === 'success'
+                        ? 'bg-green-400/10 text-green-400 border border-green-400/20'
+                        : 'bg-red-400/10 text-red-400 border border-red-400/20'
+                    }`}
+                  >
+                    {payReqMsg.type === 'success' ? <FiCheck size={14} /> : <FiAlertCircle size={14} />}
+                    {payReqMsg.text}
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
             {/* Level breakdown */}
@@ -690,41 +745,8 @@ export default function MemberDashboard() {
 
       </div>
 
-      {/* Withdrawal modal */}
+      {/* (withdrawal modal removed — replaced by payment request button in earnings tab) */}
       <AnimatePresence>
-        {withdrawing && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="glass-card rounded-3xl p-6 w-full max-w-sm max-h-[90vh] overflow-y-auto"
-            >
-              <h3 className="text-lg font-bold text-white mb-1">طلب سحب الأرباح</h3>
-              <p className="text-sm text-gray-400 mb-4">الرصيد المتاح: <span className="text-green-400 font-bold">₪{(earnings?.available || 0).toFixed(2)}</span></p>
-              <div>
-                <label className="text-xs text-gray-400 mb-1 block">المبلغ المراد سحبه (₪)</label>
-                <input
-                  type="number"
-                  min={1}
-                  max={earnings?.available || 0}
-                  value={withdrawAmount}
-                  onChange={(e) => setWithdrawAmount(e.target.value)}
-                  className="input-field w-full"
-                  placeholder="0.00"
-                  autoFocus
-                />
-              </div>
-              <div className="flex gap-3 mt-5">
-                <button onClick={handleWithdraw} className="btn-primary flex-1 py-3">تأكيد الطلب</button>
-                <button onClick={() => { setWithdrawing(false); setWithdrawAmount(''); }}
-                  className="glass-card flex-1 py-3 text-gray-300 hover:text-white rounded-2xl font-semibold text-sm">
-                  إلغاء
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
       </AnimatePresence>
 
       {/* Toast */}

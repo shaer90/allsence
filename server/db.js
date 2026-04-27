@@ -121,6 +121,11 @@ async function initDB() {
     price REAL, item_count INTEGER, color TEXT, quantity INTEGER NOT NULL DEFAULT 1,
     UNIQUE(user_id, product_id)
   );
+  CREATE TABLE IF NOT EXISTS payment_requests (
+    id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+    user_name TEXT, user_code TEXT,
+    status TEXT DEFAULT 'pending', requested_at TEXT NOT NULL
+  );
   `);
 
   // ── Migrations for existing DBs ───────────────────────────────────────────
@@ -128,6 +133,7 @@ async function initDB() {
   try { db.exec('ALTER TABLE users ADD COLUMN reminder_enabled INTEGER DEFAULT 0'); } catch(_) {}
   try { db.exec('ALTER TABLE users ADD COLUMN last_period_date TEXT'); } catch(_) {}
   try { db.exec('ALTER TABLE verifications ADD COLUMN phone TEXT'); } catch(_) {}
+  try { db.exec(`CREATE TABLE IF NOT EXISTS payment_requests (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, user_name TEXT, user_code TEXT, status TEXT DEFAULT 'pending', requested_at TEXT NOT NULL)`); } catch(_) {}
 
   // ── Seeds ──────────────────────────────────────────────────────────────────
   if (!db.prepare('SELECT id FROM commission_rates WHERE id = 1').get()) {

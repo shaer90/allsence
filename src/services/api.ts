@@ -18,7 +18,12 @@ export interface StoredMember {
   createdAt?: string; subscriberCode?: string; sponsorCode?: string;
   availableCommission?: number; totalCommission?: number;
   isVerified?: boolean; verificationStatus?: 'none' | 'pending' | 'approved' | 'rejected';
-  country?: string; city?: string; ageGroup?: string;
+  country?: string; city?: string; ageGroup?: string; isActive?: boolean;
+}
+
+export interface PaymentRequest {
+  id: string; userId: string; userName: string; userCode?: string;
+  status: 'pending' | 'seen'; requestedAt: string;
 }
 
 export interface StoredVerification {
@@ -147,6 +152,13 @@ export const adminAPI = {
   approveVerification: (id: string) => api.put(`/admin/verifications/${id}/approve`),
   rejectVerification: (id: string, reason?: string) =>
     api.put(`/admin/verifications/${id}/reject`, { reason }),
+  getPaymentRequests: () => api.get<{ requests: PaymentRequest[] }>('/admin/payment-requests'),
+  markPaymentRequestSeen: (id: string) => api.put(`/admin/payment-requests/${id}/seen`),
+};
+
+// ── Payment Requests (member) ─────────────────────────────────────────────────
+export const paymentRequestAPI = {
+  create: () => api.post('/payment-requests'),
 };
 
 // ── Verifications ─────────────────────────────────────────────────────────────

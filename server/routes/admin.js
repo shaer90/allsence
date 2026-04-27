@@ -18,8 +18,21 @@ router.get('/stats', (req, res) => {
 
 // GET /api/admin/members
 router.get('/members', (req, res) => {
-  const rows = dbMod.db.prepare('SELECT * FROM users ORDER BY created_at DESC').all();
-  res.json({ members: rows.map(dbMod.formatUser) });
+  const db = dbMod.db;
+  const rows = db.prepare('SELECT * FROM users ORDER BY created_at DESC').all();
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  res.json({
+    members: rows.map((u) => {
+      const formatted = dbMod.formatUser(u);
+      if (['member', 'admin', 'super_admin'].includes(u.role)) {
+        const activeOrder = db.prepare(
+          `SELECT id FROM orders WHERE user_id = ? AND created_at > ? LIMIT 1`
+        ).get(u.id, thirtyDaysAgo);
+        formatted.isActive = !!activeOrder;
+      }
+      return formatted;
+    }),
+  });
 });
 
 // PUT /api/admin/members/:id
@@ -178,6 +191,23 @@ router.put('/verifications/:id/reject', (req, res) => {
   if (!ver) return res.status(404).json({ message: 'الطلب غير موجود' });
   db.prepare("UPDATE verifications SET status='rejected', rejection_reason=? WHERE id=?").run(reason||null, ver.id);
   db.prepare("UPDATE users SET is_verified=0, verification_status='rejected' WHERE id=?").run(ver.user_id);
+  res.json({ success: true });
+});
+
+// ── Payment Requests ──────────────────────────────────────────────────────────
+
+router.get('/payment-requests', (req, res) => {
+  const rows = dbMod.db.prepare(`SELECT * FROM payment_requests WHERE status = 'pending' ORDER BY requested_at DESC`).all();
+  res.json({
+    requests: rows.map((r) => ({
+      id: r.id, userId: r.user_id, userName: r.user_name, userCode: r.user_code,
+      status: r.status, requestedAt: r.requested_at,
+    })),
+  });
+});
+
+router.put('/payment-requests/:id/seen', (req, res) => {
+  dbMod.db.prepare(`UPDATE payment_requests SET status = 'seen' WHERE id = ?`).run(req.params.id);
   res.json({ success: true });
 });
 

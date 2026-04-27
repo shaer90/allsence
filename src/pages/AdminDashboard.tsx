@@ -2,14 +2,14 @@ import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { adminAPI, authAPI, productsAPI } from '../services/api';
+import { adminAPI, authAPI, productsAPI, PaymentRequest } from '../services/api';
 import { Product } from '../data/products';
 import CountrySelect from '../components/CountrySelect';
 import {
   FiUsers, FiShoppingBag, FiDollarSign, FiSettings,
   FiCheck, FiPackage, FiTrendingUp, FiSave, FiPlus, FiEdit2,
   FiTrash2, FiX, FiShield, FiAlertCircle, FiEye, FiCamera,
-  FiLock, FiEyeOff, FiChevronDown,
+  FiLock, FiEyeOff, FiChevronDown, FiBell, FiSearch,
 } from 'react-icons/fi';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -24,7 +24,7 @@ interface Member {
   role: string; subscriberCode?: string; createdAt: string;
   availableCommission?: number; totalCommission?: number;
   isVerified?: boolean; verificationStatus?: string;
-  country?: string; city?: string; ageGroup?: string;
+  country?: string; city?: string; ageGroup?: string; isActive?: boolean;
 }
 
 interface Order {
@@ -823,6 +823,13 @@ export default function AdminDashboard() {
   const [verifications, setVerifications] = useState<Verification[]>([]);
   const [viewImage, setViewImage] = useState<string | null>(null);
 
+  // Payment requests
+  const [paymentRequests, setPaymentRequests] = useState<PaymentRequest[]>([]);
+
+  // Members search/filter
+  const [memberSearch, setMemberSearch] = useState('');
+  const [memberActiveFilter, setMemberActiveFilter] = useState<'all' | 'active' | 'inactive'>('all');
+
   // Member edit / add
   const [editMember, setEditMember] = useState<Member | null>(null);
   const [addMemberOpen, setAddMemberOpen] = useState(false);
@@ -849,14 +856,16 @@ export default function AdminDashboard() {
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const [statsRes, ratesRes, membersRes] = await Promise.allSettled([
+      const [statsRes, ratesRes, membersRes, payReqRes] = await Promise.allSettled([
         adminAPI.getStats(),
         adminAPI.getCommissionRates(),
         adminAPI.getMembers(),
+        adminAPI.getPaymentRequests(),
       ]);
       if (statsRes.status === 'fulfilled') setStats(statsRes.value.data);
       if (ratesRes.status === 'fulfilled') setRates(ratesRes.value.data?.rates || rates);
       if (membersRes.status === 'fulfilled') setMembers((membersRes.value.data?.members || []) as Member[]);
+      if (payReqRes.status === 'fulfilled') setPaymentRequests(payReqRes.value.data?.requests || []);
     } finally {
       setLoading(false);
     }
@@ -993,6 +1002,39 @@ export default function AdminDashboard() {
           </h1>
           <p className="text-gray-400 mt-1">إدارة المنتجات والأعضاء والعمولات</p>
         </motion.div>
+
+        {/* Payment request notifications */}
+        {paymentRequests.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="glass-card rounded-2xl p-4 mb-5 border border-yellow-500/30"
+          >
+            <div className="flex items-center gap-3 mb-3">
+              <FiBell size={16} className="text-yellow-400 flex-shrink-0" />
+              <span className="text-sm font-bold text-white">طلبات دفع معلقة ({paymentRequests.length})</span>
+            </div>
+            <div className="divide-y divide-white/5">
+              {paymentRequests.map((pr) => (
+                <div key={pr.id} className="flex items-center justify-between py-2.5 gap-3 flex-wrap">
+                  <div>
+                    <div className="text-sm font-semibold text-white">{pr.userName}</div>
+                    <div className="text-xs text-gray-500 font-mono">{pr.userCode || '—'} · {new Date(pr.requestedAt).toLocaleDateString('ar-EG')}</div>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      await adminAPI.markPaymentRequestSeen(pr.id);
+                      setPaymentRequests((prev) => prev.filter((r) => r.id !== pr.id));
+                    }}
+                    className="text-xs bg-yellow-400/10 text-yellow-400 border border-yellow-400/20 px-3 py-1.5 rounded-xl hover:bg-yellow-400/20 transition-colors font-semibold"
+                  >
+                    تم الاطلاع ✓
+                  </button>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
 
         {/* Tabs */}
         <div className="flex flex-wrap gap-2 mb-6">
@@ -1266,14 +1308,46 @@ export default function AdminDashboard() {
             </div>
 
             <div className="glass-card rounded-3xl overflow-hidden">
-              <div className="px-5 py-4 border-b border-white/10 flex items-center justify-between">
-                <h2 className="font-bold text-white">الزبائن والأعضاء</h2>
-                <span className="text-sm text-gray-400">
-                  {members.filter((m) => m.role === 'member' || m.role === 'customer').length} شخص
-                </span>
+              <div className="px-5 py-4 border-b border-white/10 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h2 className="font-bold text-white">الزبائن والأعضاء</h2>
+                  <span className="text-sm text-gray-400">
+                    {members.filter((m) => m.role === 'member' || m.role === 'customer').length} شخص
+                  </span>
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  <div className="relative flex-1 min-w-[180px]">
+                    <FiSearch size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={memberSearch}
+                      onChange={(e) => setMemberSearch(e.target.value)}
+                      placeholder="بحث بالاسم أو اليوزر أو الكود..."
+                      className="input-field w-full pr-8 py-2 text-sm"
+                    />
+                  </div>
+                  <select
+                    value={memberActiveFilter}
+                    onChange={(e) => setMemberActiveFilter(e.target.value as 'all' | 'active' | 'inactive')}
+                    className="input-field py-2 text-sm"
+                  >
+                    <option value="all">الكل</option>
+                    <option value="active">نشط فقط</option>
+                    <option value="inactive">غير نشط</option>
+                  </select>
+                </div>
               </div>
-              {members.filter((m) => m.role === 'member' || m.role === 'customer').length === 0 ? (
-                <div className="p-10 text-center text-gray-500">لا يوجد أعضاء أو زبائن بعد</div>
+              {(() => {
+                const q = memberSearch.trim().toLowerCase();
+                const filtered = members.filter((m) => {
+                  if (m.role !== 'member' && m.role !== 'customer') return false;
+                  if (q && !m.name.toLowerCase().includes(q) && !m.username.toLowerCase().includes(q) && !(m.subscriberCode || '').toLowerCase().includes(q)) return false;
+                  if (memberActiveFilter === 'active' && m.role === 'member' && !m.isActive) return false;
+                  if (memberActiveFilter === 'inactive' && m.role === 'member' && m.isActive) return false;
+                  return true;
+                });
+                return filtered.length === 0 ? (
+                <div className="p-10 text-center text-gray-500">لا يوجد أعضاء مطابقون</div>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
@@ -1285,7 +1359,7 @@ export default function AdminDashboard() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-white/5">
-                      {members.filter((m) => m.role === 'member' || m.role === 'customer').map((m) => (
+                      {filtered.map((m) => (
                         <tr key={m._id} className="hover:bg-white/3 transition-colors">
                           <td className="px-4 py-3">
                             <div className="font-medium text-white">{m.name}</div>
@@ -1293,11 +1367,20 @@ export default function AdminDashboard() {
                           </td>
                           <td className="px-4 py-3 text-gray-400 font-mono text-xs" dir="ltr">{m.phone}</td>
                           <td className="px-4 py-3">
-                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                            <div className="flex flex-col gap-1">
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium w-fit ${
                               m.role === 'member' ? 'bg-blue-500/20 text-blue-400' : 'bg-white/10 text-gray-400'
                             }`}>
                               {m.role === 'member' ? 'عضو' : 'زبون'}
                             </span>
+                            {m.role === 'member' && (
+                              <span className={`text-xs px-2 py-0.5 rounded-full font-medium w-fit ${
+                                m.isActive ? 'bg-green-400/10 text-green-400' : 'bg-gray-500/10 text-gray-500'
+                              }`}>
+                                {m.isActive ? '● نشط' : '○ غير نشط'}
+                              </span>
+                            )}
+                            </div>
                           </td>
                           <td className="px-4 py-3 font-mono text-pink-400 text-xs">{m.subscriberCode || '—'}</td>
                           <td className="px-4 py-3 text-green-400 font-semibold">
@@ -1331,7 +1414,8 @@ export default function AdminDashboard() {
                     </tbody>
                   </table>
                 </div>
-              )}
+              )
+            })()}
             </div>
           </motion.div>
         )}
